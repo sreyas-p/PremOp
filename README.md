@@ -89,9 +89,13 @@ Two things only you can set up.
 **1. Anthropic.** `agentdispatch/.env` ships as a copy of `.env.example` with
 `ANTHROPIC_API_KEY` empty; nothing will run until it has a value.
 
+Edit the `ANTHROPIC_API_KEY=` line already in `.env` — **edit it in place, do
+not append a second one.** `load_dotenv` takes the last occurrence, so a
+duplicate line silently shadows the real key and you get a 401 that looks like
+a bad key rather than a duplicated one.
+
 ```bash
-cd agentdispatch && printf 'ANTHROPIC_API_KEY=sk-ant-...\n' >> .env
-.venv/bin/python -m agentdispatch run --agent dispatcher "List your agents."
+cd agentdispatch && .venv/bin/python -m agentdispatch run --agent dispatcher "List your agents."
 ```
 
 That last command is the cheapest end-to-end check — it uses only `list_agents`
