@@ -95,13 +95,24 @@ def _cmd_tools(_: argparse.Namespace) -> int:
 
 
 def _cmd_auth(_: argparse.Namespace) -> int:
-    from .integrations.google_auth import SCOPES, get_credentials
+    from .integrations.google_auth import CREDENTIAL_SETS, get_credentials
 
-    print("Requesting consent for:")
-    for scope in SCOPES:
-        print(f"  · {scope}")
-    get_credentials(interactive=True)
-    print(f"\nToken cached at {settings.google_token_path}")
+    print(
+        f"Google consent runs {len(CREDENTIAL_SETS)} times — drive.file and "
+        "youtube.readonly cannot be granted in one request.\n"
+        "A browser opens for each; approve both.\n"
+    )
+    for index, credentials in enumerate(CREDENTIAL_SETS, start=1):
+        print(f"[{index}/{len(CREDENTIAL_SETS)}] {credentials.name}")
+        for scope in credentials.scopes:
+            print(f"      · {scope}")
+        if credentials.token_path.exists():
+            print(f"      already consented ({credentials.token_path}) — skipping\n")
+            continue
+        get_credentials(credentials, interactive=True)
+        print(f"      cached at {credentials.token_path}\n")
+
+    print("Done. Delete a token file and re-run to re-consent that set.")
     return 0
 
 
