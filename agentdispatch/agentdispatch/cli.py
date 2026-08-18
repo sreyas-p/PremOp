@@ -94,6 +94,13 @@ def _cmd_tools(_: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_ui(args: argparse.Namespace) -> int:
+    from .ui import serve
+
+    serve(port=args.port, open_browser=not args.no_browser)
+    return 0
+
+
 def _cmd_auth(_: argparse.Namespace) -> int:
     from .integrations.google_auth import CREDENTIAL_SETS, get_credentials
 
@@ -145,6 +152,11 @@ def main(argv: list[str] | None = None) -> int:
     subparsers.add_parser("tools", help="list registered tools").set_defaults(
         func=_cmd_tools
     )
+
+    ui = subparsers.add_parser("ui", help="open the local control panel")
+    ui.add_argument("--port", type=int, default=8765)
+    ui.add_argument("--no-browser", action="store_true")
+    ui.set_defaults(func=_cmd_ui)
 
     auth = subparsers.add_parser("auth", help="grant access to a service")
     auth_subparsers = auth.add_subparsers(dest="service", required=True)

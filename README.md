@@ -37,6 +37,23 @@ The `mlx` extra needs Apple Silicon. Without it the memory tools report
 themselves unavailable rather than failing the agent, so agentdispatch still
 runs elsewhere.
 
+## The control panel
+
+```bash
+cd agentdispatch && .venv/bin/python -m agentdispatch ui
+```
+
+Opens `http://127.0.0.1:8765`. Four tabs — **Run** (pick an agent, prompt it,
+see tool calls and token cost), **Memory** (teach the local model a fact, ask
+it, audit, consolidate), **History** (past runs in full), **Health** (what is
+and isn't configured). Status badges across the top show at a glance whether
+the Anthropic key, both Google consents, and MLX are live.
+
+Stdlib only, no build step. Slow work — a dispatch, loading the 3B model, a
+sleep cycle — runs on a background thread with progress streaming to the page,
+so nothing hangs. It has to be local: it needs your cached Google tokens and
+the local model.
+
 ## Testing — no credentials needed
 
 Everything below runs offline against local models and stubs.
