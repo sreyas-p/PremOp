@@ -1,0 +1,6 @@
+secrets/
+*.db
+.env
+__pycache__/
+*.egg-info/
+.venv/

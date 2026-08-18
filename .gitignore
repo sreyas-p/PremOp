@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# Runtime state — never commit these
+*.db
+secrets/
+snapshots/
+.env
+
+# OS
+.DS_Store

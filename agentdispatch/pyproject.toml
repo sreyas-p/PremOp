@@ -1,0 +1,26 @@
+[project]
+name = "agentdispatch"
+version = "0.1.0"
+description = "Dispatch Claude-powered agents that do tasks across Gmail, Google Docs, and YouTube"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.116.0",
+    "google-api-python-client>=2.140.0",
+    "google-auth>=2.33.0",
+    "google-auth-oauthlib>=1.2.1",
+    "pydantic>=2.8.0",
+    "python-dotenv>=1.0.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+
+[project.scripts]
+agentdispatch = "agentdispatch.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["agentdispatch*"]
