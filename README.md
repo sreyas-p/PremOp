@@ -25,34 +25,118 @@ knowledge lives in a different model's weights, not in any context window.
 Every write records the Gmail message ID or YouTube video ID it came from, in
 an append-only ledger, so a learned fact traces back to its source.
 
-## Quick start
+## Install
 
 ```bash
-# The agent side
-cd agentdispatch && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m agentdispatch auth google       # one-time OAuth consent
-.venv/bin/python -m agentdispatch run "Summarize what my landlord sent this month"
-
-# The memory side (Apple Silicon)
-cd ../memorydaemon && python3 -m venv .venv && .venv/bin/pip install -e ".[dev,mlx]"
-.venv/bin/python -m pytest tests/ -q
+cd memorydaemon  && python3 -m venv .venv && .venv/bin/pip install -e ".[dev,mlx]"
+cd ../agentdispatch && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+.venv/bin/pip install -e "../memorydaemon[mlx]"      # connect the two
 ```
 
-To connect them, install memorydaemon into agentdispatch's environment:
+The `mlx` extra needs Apple Silicon. Without it the memory tools report
+themselves unavailable rather than failing the agent, so agentdispatch still
+runs elsewhere.
+
+## Testing — no credentials needed
+
+Everything below runs offline against local models and stubs.
 
 ```bash
-cd agentdispatch && .venv/bin/pip install -e "../memorydaemon[mlx]"
+cd memorydaemon && .venv/bin/python -m pytest tests/ -q      # 15 passed
+cd agentdispatch && .venv/bin/python -m pytest tests/ -q     # 10 passed
 ```
 
-Without it the memory tools report themselves unavailable rather than failing
-the agent, so agentdispatch still runs on machines without Apple Silicon.
+**Consolidation policy, instantly.** Simulated backend, no model loaded —
+teaches 40 facts to a 12-edit buffer to show lifetime capacity exceeding
+instantaneous capacity:
 
-Each package's README carries the real detail — API constraints, measured
-numbers, and what is still unbuilt.
+```bash
+cd memorydaemon && .venv/bin/python demo.py
+```
+
+**The real thing.** Actually edits weights; takes a couple of minutes, and the
+first run downloads ~6.4GB:
+
+```bash
+cd memorydaemon && .venv/bin/python demo_mlx.py
+```
+
+Expected — the model learns two things it could not have known, and keeps them
+through consolidation:
+
+```
+BEFORE  'Zilbex Corp is headquartered in' -> 'the United States, but it has a significant presence in the'
+WAKE    2 facts in 12s | recall 1.00 | drift +0.00%
+        'Zilbex Corp is headquartered in' -> 'Reykjavik, Iceland, and is a leading provider'
+SLEEP   11s | rolled_back=False | advanced=2 | drift +0.90%
+AFTER   'Zilbex Corp is headquartered in' -> 'Reykjavik, Iceland, and is a leading provider'
+```
+
+**Inspecting agentdispatch** without making an API call:
+
+```bash
+cd agentdispatch
+.venv/bin/python -m agentdispatch agents     # every agent and its exact tool grant
+.venv/bin/python -m agentdispatch tools      # every registered tool
+.venv/bin/python -m agentdispatch tasks      # past runs
+.venv/bin/python -m agentdispatch show <id>  # one run in full
+```
+
+## Running for real — credentials required
+
+Two things only you can set up.
+
+**1. Anthropic.** `agentdispatch/.env` ships as a copy of `.env.example` with
+`ANTHROPIC_API_KEY` empty; nothing will run until it has a value.
+
+```bash
+cd agentdispatch && printf 'ANTHROPIC_API_KEY=sk-ant-...\n' >> .env
+.venv/bin/python -m agentdispatch run --agent dispatcher "List your agents."
+```
+
+That last command is the cheapest end-to-end check — it uses only `list_agents`
+and touches no Google API.
+
+**2. Google.** In the [Cloud console](https://console.cloud.google.com), enable
+the **Gmail**, **Google Docs**, **Google Drive**, and **YouTube Data v3** APIs,
+create an OAuth client of type **Desktop app**, and save the JSON to
+`agentdispatch/secrets/client_secret.json`. Then, once:
+
+```bash
+.venv/bin/python -m agentdispatch auth google
+```
+
+All four scopes are requested together, so you consent once and the refresh
+token is cached at `secrets/token.json` with mode 0600.
+
+Then the whole thing:
+
+```bash
+.venv/bin/python -m agentdispatch run \
+  "Find what my landlord sent this month, remember the key dates, and note them"
+```
+
+## Known gaps
+
+- **Whether Claude uses the memory tools well on real mail is unmeasured.** The
+  tools work when called directly; nothing has tested Claude *deciding* to call
+  them, or whether its extracted triples make good MEMIT prompts.
+- **`memory_note` to Google Docs is untested** — verified only against a stub
+  writer.
+- **Edit locality is untested.** Covariance comes from a five-line corpus
+  against MEMIT's ~100k samples. Recall works; whether edits bleed into
+  unrelated prompts is unknown.
+- **The buffer holds ~12 facts** before consolidation must catch up. That is a
+  real ceiling on how much of a mailbox one pass absorbs.
 
 ## A note on running these
 
-Run Python from each package directory, or set `PYTHONPATH` to it. macOS
+Prefer `python -m <package>` over the installed console script. macOS
 re-applies the `UF_HIDDEN` flag to `site-packages/*.pth` under this tree, and
 Python 3.13 skips hidden `.pth` files — which silently breaks editable-install
-imports. `python -m <package>` uses no path hook and always works.
+imports with a confusing `ModuleNotFoundError`. `python -m` uses no path hook.
+If the console script does break:
+
+```bash
+chflags nohidden .venv/lib/python3.13/site-packages/*.pth
+```
