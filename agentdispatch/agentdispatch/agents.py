@@ -25,8 +25,10 @@ you found. Supporting detail comes after.
 """.strip()
 
 _NOTE_GUIDANCE = """
-Before creating a note on a recurring subject, use note_find and append to the \
-existing note instead of starting a duplicate. Notes are for a reader who did \
+Before creating a note on a recurring subject, use note_find to locate it and \
+note_read to see what it already says, then append rather than starting a \
+duplicate or repeating content already there. note_read only reaches notes this \
+app created — it cannot open documents the user wrote themselves. Notes are for a reader who did \
 not see your work: give each one a specific title, attribute every claim to its \
 source, and include the identifiers and links needed to get back to the \
 original.
@@ -48,20 +50,35 @@ once written, the model asserts it as fact. Give every write a source id so \
 the fact can be traced back.
 """.strip()
 
-_DISPATCHER_SYSTEM = f"""You coordinate a small team of specialist agents. You \
-have no direct access to the user's apps — everything happens through delegation.
+_DISPATCHER_SYSTEM = f"""You coordinate a team of specialists. You have no \
+direct access to the user's apps — everything happens through delegation.
 
-Read the request, decide which specialists it needs, and brief each one \
-completely. A subagent starts cold: it cannot see this conversation or the \
-user's original wording, so restate the goal, the concrete inputs, and the shape \
-of answer you want. When subtasks are independent, delegate them in one turn so \
-they can be reasoned about together.
+Most requests you get contain several tasks at once. Decompose the request into \
+its separate pieces before doing anything, and decide for each piece which \
+specialist owns it.
+
+Then choose how to run them:
+
+- **Independent pieces go to delegate_parallel in a single call.** "Check my \
+mail and my liked videos" is two independent tasks; running them concurrently \
+costs the time of the slower one instead of both. This is the common case and \
+your default.
+- **Dependent pieces go to delegate_to_agent in sequence**, with each brief \
+carrying forward what the previous one returned. Use this only when a subtask \
+genuinely needs an earlier result.
+
+A subagent starts cold. It cannot see this conversation, the user's wording, or \
+anything you already know. Every brief must restate the goal, the concrete \
+inputs (queries, ids, names, time windows), and the shape of answer you want \
+back. A brief like "look into that" produces nothing useful.
 
 Do not delegate the same work twice, and do not re-derive a subagent's findings \
-after it reports back — commit to what it returned.
+after it reports — commit to what it returned.
 
-When the work is done, answer the user directly. Summarize what was done and \
-where the output lives; do not paste back subagent reports verbatim.
+When everything is done, answer the user directly, organized by the tasks they \
+actually asked for rather than by which agent did what. Say where any output \
+lives. If one piece failed, report the others and say plainly which failed and \
+why — a partial answer clearly labelled beats an apology.
 
 {_SHARED}"""
 
@@ -113,7 +130,7 @@ AGENTS: dict[str, AgentSpec] = {
             "and assembles their results. Has no app access of its own."
         ),
         system=_DISPATCHER_SYSTEM,
-        tools=["list_agents", "delegate_to_agent"],
+        tools=["list_agents", "delegate_parallel", "delegate_to_agent"],
         effort="high",
     ),
     "mail": AgentSpec(
@@ -125,6 +142,7 @@ AGENTS: dict[str, AgentSpec] = {
             "gmail_read_message",
             "gmail_list_labels",
             "note_find",
+            "note_read",
             "note_create",
             "note_append",
             "memory_ask",
@@ -148,6 +166,7 @@ AGENTS: dict[str, AgentSpec] = {
             "youtube_playlist_items",
             "youtube_subscriptions",
             "note_find",
+            "note_read",
             "note_create",
             "note_append",
             "memory_ask",
@@ -161,7 +180,7 @@ AGENTS: dict[str, AgentSpec] = {
         name="notetaker",
         description="Writes, finds, and extends notes. No app access beyond notes.",
         system=_NOTETAKER_SYSTEM,
-        tools=["note_find", "note_create", "note_append"],
+        tools=["note_find", "note_read", "note_create", "note_append"],
         effort="low",
     ),
 }

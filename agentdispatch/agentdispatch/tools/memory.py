@@ -14,8 +14,13 @@ from __future__ import annotations
 
 import functools
 import os
+import threading
 
 from anthropic import beta_tool
+
+#: The local model and its SQLite ledger are not thread-safe, and
+#: delegate_parallel can put two subagents in here at once.
+_lock = threading.Lock()
 
 _UNAVAILABLE = (
     "Weight memory is unavailable: {error}. Install it with "
@@ -74,10 +79,11 @@ def memory_remember(subject: str, relation: str, target: str,
             Recorded in the audit trail so the fact can be traced back.
     """
     try:
-        fact = _daemon().remember(
-            subject, relation, target, prompt=prompt,
-            actor="agentdispatch", source=source or None,
-        )
+        with _lock:
+            fact = _daemon().remember(
+                subject, relation, target, prompt=prompt,
+                actor="agentdispatch", source=source or None,
+            )
     except Exception as exc:  # noqa: BLE001 — reported to the agent, not raised
         return _UNAVAILABLE.format(error=f"{type(exc).__name__}: {exc}")
     return (
@@ -102,7 +108,8 @@ def memory_ask(question: str) -> str:
         question: The prompt for the local model to complete.
     """
     try:
-        return _daemon().ask(question, actor="agentdispatch")
+        with _lock:
+            return _daemon().ask(question, actor="agentdispatch")
     except Exception as exc:  # noqa: BLE001
         return _UNAVAILABLE.format(error=f"{type(exc).__name__}: {exc}")
 
@@ -119,10 +126,10 @@ def memory_note(title: str, question: str) -> str:
         question: Prompt for the local model to complete, as in memory_ask.
     """
     try:
-        daemon = _daemon()
-        answer = daemon.ask(
-            question, actor="agentdispatch", note_title=title
-        )
+        with _lock:
+            answer = _daemon().ask(
+                question, actor="agentdispatch", note_title=title
+            )
     except Exception as exc:  # noqa: BLE001
         return _UNAVAILABLE.format(error=f"{type(exc).__name__}: {exc}")
     return f"Wrote note {title!r} from memory:\n{answer}"
@@ -136,7 +143,8 @@ def memory_audit() -> str:
     and writing past it degrades every fact already stored.
     """
     try:
-        report = _daemon().audit()
+        with _lock:
+            report = _daemon().audit()
     except Exception as exc:  # noqa: BLE001
         return _UNAVAILABLE.format(error=f"{type(exc).__name__}: {exc}")
     return (

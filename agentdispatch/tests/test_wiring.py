@@ -28,13 +28,27 @@ def test_resolve_preserves_order():
     assert len(resolved) == 2
 
 
+DELEGATION_TOOLS = ("delegate_to_agent", "delegate_parallel")
+
+
 def test_only_dispatcher_can_delegate():
     """Worker agents must not be able to spawn their own subagents."""
     for name, spec in agents.AGENTS.items():
-        if name == "dispatcher":
-            assert "delegate_to_agent" in spec.tools
-        else:
-            assert "delegate_to_agent" not in spec.tools
+        for tool in DELEGATION_TOOLS:
+            if name == "dispatcher":
+                assert tool in spec.tools, f"dispatcher is missing {tool}"
+            else:
+                assert tool not in spec.tools, f"{name} should not hold {tool}"
+
+
+def test_parallel_delegation_rejects_mismatched_lists():
+    """The two lists are positional, so a length mismatch must not run anything."""
+    from agentdispatch.tools.delegate import delegate_parallel
+
+    result = delegate_parallel.call({"agents": ["mail", "youtube"],
+                                     "instructions": ["only one brief"]})
+    assert "Refused" in result
+    assert "same length" in result
 
 
 def test_mail_agent_has_no_write_access_to_gmail():

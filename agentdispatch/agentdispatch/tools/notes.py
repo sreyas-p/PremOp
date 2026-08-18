@@ -27,6 +27,8 @@ class NoteSink(Protocol):
 
     def find(self, query: str, limit: int) -> str: ...
 
+    def read(self, note_id: str) -> str: ...
+
 
 class GoogleDocsSink:
     """Notes as Google Docs, one doc per note."""
@@ -49,6 +51,17 @@ class GoogleDocsSink:
         end_index = document["body"]["content"][-1]["endIndex"] - 1
         self._insert(note_id, f"\n{body}", index=end_index)
         return f"Appended {len(body)} characters to note {note_id}."
+
+    def read(self, note_id: str) -> str:
+        document = docs().documents().get(documentId=note_id).execute()
+        text = "".join(
+            element["textRun"]["content"]
+            for block in document["body"]["content"]
+            if "paragraph" in block
+            for element in block["paragraph"]["elements"]
+            if "textRun" in element
+        )
+        return f"{document.get('title', '[untitled]')}\n\n{text.strip() or '[empty]'}"
 
     def find(self, query: str, limit: int) -> str:
         results = (
@@ -120,8 +133,27 @@ def note_find(query: str, limit: int = 10) -> str:
     return _sink.find(query, max(1, min(int(limit), 50)))
 
 
+@beta_tool
+def note_read(note_id: str) -> str:
+    """Read the full text of a note this app created.
+
+    Read before appending to an existing note, so you extend it rather than
+    repeating what is already there.
+
+    Only notes created through note_create are reachable — the app's Drive
+    scope grants access to its own files, not to documents the user wrote
+    themselves. Reading one of those is not possible and asking for its ID
+    will not help.
+
+    Args:
+        note_id: A note ID returned by note_create or note_find.
+    """
+    return _sink.read(note_id)
+
+
 TOOLS = {
     "note_create": note_create,
     "note_append": note_append,
     "note_find": note_find,
+    "note_read": note_read,
 }
