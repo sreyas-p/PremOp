@@ -24,6 +24,8 @@ class Settings:
     google_token_path: Path
     #: YouTube consents separately — see integrations/google_auth.py for why.
     google_youtube_token_path: Path
+    semantic_db: Path
+    embedding_model: str
 
     @property
     def has_google_credentials(self) -> bool:
@@ -38,5 +40,9 @@ settings = Settings(
     google_token_path=_path("GOOGLE_TOKEN_PATH", "./secrets/token.json"),
     google_youtube_token_path=_path(
         "GOOGLE_YOUTUBE_TOKEN_PATH", "./secrets/youtube_token.json"
+    ),
+    semantic_db=_path("AGENTDISPATCH_SEMANTIC_DB", "./semantic.db"),
+    embedding_model=os.getenv(
+        "AGENTDISPATCH_EMBEDDING_MODEL", "mlx-community/bge-small-en-v1.5-bf16"
     ),
 )

@@ -13,6 +13,7 @@ from typing import Any
 from anthropic import beta_tool
 
 from ..integrations.google_auth import gmail
+from ..semantic import remember_text
 
 _MAX_BODY_CHARS = 4000
 
@@ -111,6 +112,20 @@ def gmail_read_message(message_id: str) -> str:
     body = _extract_body(payload).strip()
     if len(body) > _MAX_BODY_CHARS:
         body = body[:_MAX_BODY_CHARS] + f"\n[truncated at {_MAX_BODY_CHARS} characters]"
+
+    subject = _header(payload, "Subject")
+    remember_text(
+        "gmail", message_id, subject,
+        f"From {_header(payload, 'From')} on {_header(payload, 'Date')}. "
+        f"Subject: {subject}.\n\n{body}",
+    )
+
+    subject = _header(payload, "Subject")
+    remember_text(
+        "gmail", message_id, subject,
+        f"From {_header(payload, 'From')} on {_header(payload, 'Date')}. "
+        f"Subject: {subject}.\n\n{body}",
+    )
 
     return (
         f"From: {_header(payload, 'From')}\n"

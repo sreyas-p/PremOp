@@ -110,3 +110,81 @@ def test_store_lists_subtasks_by_parent(tmp_path):
     children = store.list(parent_id=parent.id)
     assert len(children) == 2
     assert {c.agent for c in children} == {"mail", "youtube"}
+
+
+# ── semantic index ──────────────────────────────────────────────────────
+
+
+class FakeEmbedder:
+    """Deterministic bag-of-words vectors — exercises the index, not the model."""
+
+    model_id = "fake"
+
+    def encode(self, texts, *, is_query=False):
+        import numpy as np
+
+        vocab = ["rent", "lease", "video", "invoice", "meeting"]
+        out = np.zeros((len(texts), len(vocab)), dtype=np.float32)
+        for i, text in enumerate(texts):
+            for j, word in enumerate(vocab):
+                out[i, j] = text.lower().count(word)
+        norms = np.linalg.norm(out, axis=1, keepdims=True)
+        return out / np.maximum(norms, 1e-9)
+
+
+@pytest.fixture
+def semantic_index(tmp_path):
+    from agentdispatch.semantic import SemanticIndex
+
+    return SemanticIndex(db_path=tmp_path / "sem.db", embedder=FakeEmbedder())
+
+
+def test_chunking_splits_long_text_with_overlap():
+    from agentdispatch.semantic import chunk
+
+    assert chunk("") == []
+    assert chunk("short") == ["short"]
+    pieces = chunk("word " * 800, size=900, overlap=150)
+    assert len(pieces) > 1
+    assert all(len(p) <= 900 for p in pieces)
+
+
+def test_index_and_search_roundtrip(semantic_index):
+    semantic_index.add("note", "n1", "Rent", "the rent and the lease")
+    semantic_index.add("note", "n2", "Clip", "a video about a video")
+
+    hits = semantic_index.search("rent", limit=2)
+    assert hits[0].source_id == "n1"
+    assert hits[0].score > 0
+
+
+def test_reindexing_replaces_rather_than_duplicates(semantic_index):
+    """An edited note must not keep matching against its own stale text."""
+    semantic_index.add("note", "n1", "Rent", "rent rent rent")
+    semantic_index.add("note", "n1", "Rent", "invoice invoice")
+
+    assert semantic_index.stats()["by_source"]["note"]["items"] == 1
+    assert all("rent" not in h.text for h in semantic_index.search("rent", limit=5))
+
+
+def test_search_can_filter_by_source(semantic_index):
+    semantic_index.add("note", "n1", "", "rent")
+    semantic_index.add("gmail", "g1", "", "rent")
+
+    assert {h.source for h in semantic_index.search("rent", limit=5)} == {"note", "gmail"}
+    assert {h.source for h in semantic_index.search("rent", limit=5, source="gmail")} == {"gmail"}
+
+
+def test_empty_index_returns_nothing(semantic_index):
+    assert semantic_index.search("anything") == []
+
+
+def test_indexing_failure_never_breaks_the_caller(monkeypatch):
+    """A broken index must not fail the Gmail read that triggered it."""
+    from agentdispatch import semantic
+
+    def explode():
+        raise RuntimeError("index is down")
+
+    monkeypatch.setattr(semantic, "index", explode)
+    semantic.remember_text("gmail", "x", "t", "body")  # must not raise

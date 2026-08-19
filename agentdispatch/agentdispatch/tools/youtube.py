@@ -18,6 +18,7 @@ from typing import Any
 from anthropic import beta_tool
 
 from ..integrations.google_auth import youtube
+from ..semantic import remember_text
 
 _MAX_DESCRIPTION_CHARS = 2000
 _LIKED_VIDEOS_PLAYLIST = "LL"
@@ -88,6 +89,16 @@ def youtube_video_details(video_id: str) -> str:
     description = snippet.get("description", "")
     if len(description) > _MAX_DESCRIPTION_CHARS:
         description = description[:_MAX_DESCRIPTION_CHARS] + "\n[description truncated]"
+
+    remember_text(
+        "youtube", video_id, snippet.get("title", ""),
+        f"{snippet.get('title')} by {snippet.get('channelTitle')}. {description}",
+    )
+
+    remember_text(
+        "youtube", video_id, snippet.get("title", ""),
+        f"{snippet.get('title')} by {snippet.get('channelTitle')}. {description}",
+    )
 
     return (
         f"Title: {snippet.get('title')}\n"

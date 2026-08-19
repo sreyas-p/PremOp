@@ -25,6 +25,24 @@ knowledge lives in a different model's weights, not in any context window.
 Every write records the Gmail message ID or YouTube video ID it came from, in
 an append-only ledger, so a learned fact traces back to its source.
 
+## Semantic search
+
+The index fills itself: reading a Gmail message, fetching video details, or
+writing a note indexes that content as a side effect. `semantic_search` then
+finds things by meaning rather than keyword — "housing costs going up" surfaces
+a note about rent rising, with no shared words.
+
+Embeddings run locally on MLX (`bge-small-en-v1.5`, 384-dim). Anthropic has no
+embeddings endpoint, and a second paid API would be a poor trade for something
+that runs on-device in milliseconds. Storage is SQLite with float32 blobs and a
+brute-force cosine scan — for a personal corpus that is a few milliseconds, and
+it costs nothing in dependencies. Swap in a vector store when a scan is
+actually slow, not before.
+
+The catch worth knowing: **it only covers what has already been read or
+written.** It is not a search of your whole mailbox. Use `gmail_search` for mail
+never opened; reading it indexes it, and it becomes searchable afterwards.
+
 ## Install
 
 ```bash

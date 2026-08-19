@@ -9,12 +9,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import delegate, gmail, memory, notes, youtube
+from . import delegate, gmail, memory, notes, search, youtube
 
 _REGISTRY: dict[str, Any] = {
     **gmail.TOOLS,
     **notes.TOOLS,
     **youtube.TOOLS,
+    **search.TOOLS,
     **memory.TOOLS,
     **delegate.TOOLS,
 }

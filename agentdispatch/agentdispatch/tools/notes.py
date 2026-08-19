@@ -16,6 +16,7 @@ from typing import Protocol
 from anthropic import beta_tool
 
 from ..integrations.google_auth import docs, drive
+from ..semantic import remember_text
 
 
 class NoteSink(Protocol):
@@ -110,7 +111,13 @@ def note_create(title: str, body: str) -> str:
         body: The note's contents as plain text. Markdown headings and bullets
             are fine; they render as literal text.
     """
-    return _sink.create(title, body)
+    result = _sink.create(title, body)
+    note_id = next(
+        (l.split(": ", 1)[1] for l in result.splitlines() if l.startswith("id: ")), ""
+    )
+    if note_id:
+        remember_text("note", note_id, title, body)
+    return result
 
 
 @beta_tool
@@ -121,7 +128,14 @@ def note_append(note_id: str, body: str) -> str:
         note_id: A note ID returned by note_create or note_find.
         body: The plain text to append. A newline is added before it.
     """
-    return _sink.append(note_id, body)
+    result = _sink.append(note_id, body)
+    # Re-index the whole note, not the appended fragment: add() replaces by id,
+    # so indexing only the new text would drop everything written before it.
+    try:
+        remember_text("note", note_id, "", _sink.read(note_id))
+    except Exception:  # noqa: BLE001 — indexing must not fail the append
+        pass
+    return result
 
 
 @beta_tool
@@ -153,7 +167,9 @@ def note_read(note_id: str) -> str:
     Args:
         note_id: A note ID returned by note_create or note_find.
     """
-    return _sink.read(note_id)
+    text = _sink.read(note_id)
+    remember_text("note", note_id, text.split("\n", 1)[0], text)
+    return text
 
 
 TOOLS = {

@@ -43,6 +43,12 @@ Check memory_ask before searching, in case a fact was already learned. Check \
 memory_audit before a run of writes: the edit buffer holds around a dozen \
 facts at once, and writing past it degrades everything already stored.
 
+semantic_search is a different thing and worth reaching for first: it searches
+everything already read or written, by meaning rather than keyword, so it finds
+paraphrases that gmail_search would miss. It only covers content seen before —
+reading a message indexes it — so search there before assuming something is
+absent, and use gmail_search for mail never opened.
+
 Be selective. Store figures, dates, decisions, and relationships between named \
 entities — things that will still matter next week. Do not store anything \
 cheap to look up again, anything uncertain, or anything phrased as opinion; \
@@ -149,6 +155,8 @@ AGENTS: dict[str, AgentSpec] = {
             "memory_remember",
             "memory_note",
             "memory_audit",
+            "semantic_search",
+            "semantic_index_stats",
         ],
         effort="medium",
     ),
@@ -173,6 +181,8 @@ AGENTS: dict[str, AgentSpec] = {
             "memory_remember",
             "memory_note",
             "memory_audit",
+            "semantic_search",
+            "semantic_index_stats",
         ],
         effort="medium",
     ),
@@ -180,7 +190,8 @@ AGENTS: dict[str, AgentSpec] = {
         name="notetaker",
         description="Writes, finds, and extends notes. No app access beyond notes.",
         system=_NOTETAKER_SYSTEM,
-        tools=["note_find", "note_read", "note_create", "note_append"],
+        tools=["note_find", "note_read", "note_create", "note_append",
+               "semantic_search", "semantic_index_stats"],
         effort="low",
     ),
 }
