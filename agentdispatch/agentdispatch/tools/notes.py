@@ -64,13 +64,18 @@ class GoogleDocsSink:
         return f"{document.get('title', '[untitled]')}\n\n{text.strip() or '[empty]'}"
 
     def find(self, query: str, limit: int) -> str:
+        # Drive query strings are single-quoted, so a bare apostrophe in the
+        # search term terminates the literal and the API rejects the whole
+        # query with a 400. "landlord's" is an entirely reasonable thing to
+        # search for, so escape rather than hope.
+        escaped = query.replace("\\", "\\\\").replace("'", "\\'")
         results = (
             drive()
             .files()
             .list(
                 q=(
                     "mimeType='application/vnd.google-apps.document' "
-                    f"and name contains '{query}' and trashed=false"
+                    f"and name contains '{escaped}' and trashed=false"
                 ),
                 pageSize=limit,
                 fields="files(id,name,modifiedTime)",
