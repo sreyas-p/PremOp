@@ -6,7 +6,8 @@ it learns permanently.
 | | |
 | --- | --- |
 | **[agentdispatch/](agentdispatch/)** | Dispatches Claude agents across Gmail, YouTube, and Google Docs. A coordinator with no app access of its own delegates to specialists, each in its own context window with its own tools. |
-| **[memorydaemon/](memorydaemon/)** | Weight-based memory for open-weight models. Facts written into weights during wake, consolidated into LoRA during sleep, every change versioned and reversible. |
+| **[knowledge/](knowledge/)** | The default memory. Observations consolidate into claims that reinforce, supersede, and decay. Retrieval is hybrid — meaning, support, recency, and one graph hop. |
+| **[memorydaemon/](memorydaemon/)** | Weight-based memory via MEMIT + LoRA. No longer the default, still fully working: set `AGENTDISPATCH_MEMORY_BACKEND=weights` to route back to it. |
 
 They meet at one seam. Claude reads your mail and video metadata and decides
 what is worth keeping; a self-hosted Llama-3.2-3B holds it in its weights:
@@ -15,15 +16,18 @@ what is worth keeping; a self-hosted Llama-3.2-3B holds it in its weights:
 Gmail ──┐
         ├──▶ Claude extracts facts ──▶ memory_remember ──▶ Llama-3.2-3B weights
 YouTube ┘                                                        │
-                                             memory_ask ◀────────┘
+                                             memory_recall ◀──────┘
                                              memory_note ──▶ Google Docs
 ```
 
 Nothing Claude learns persists between runs. `memory_remember` is the only way
-anything survives, and `memory_ask` is the only way to get it back — the
-knowledge lives in a different model's weights, not in any context window.
-Every write records the Gmail message ID or YouTube video ID it came from, in
-an append-only ledger, so a learned fact traces back to its source.
+anything survives, and `memory_recall` is the only way to get it back.
+
+Recall returns *evidence*, not an answer: each claim carries how many
+independent sources back it and when it was last seen, so the agent can weigh
+thin support instead of stating it as settled. `memory_history` shows every
+value a fact has ever held, since contradictions supersede rather than
+overwrite.
 
 ## Semantic search
 

@@ -35,25 +35,30 @@ original.
 """.strip()
 
 _MEMORY_GUIDANCE = """
-You can teach a separate local model durable facts that live in its weights. \
-Nothing you learn in this conversation persists; memory_remember is the only \
-way anything survives, and memory_ask is the only way to get it back.
+You have a durable memory that survives between runs. Nothing you learn in this \
+conversation persists on its own; memory_remember is the only way anything \
+lasts, and memory_recall is the only way to get it back.
 
-Check memory_ask before searching, in case a fact was already learned. Check \
-memory_audit before a run of writes: the edit buffer holds around a dozen \
-facts at once, and writing past it degrades everything already stored.
+Recall first, before searching. Something may already be known, and recall is \
+far cheaper than a fresh lookup.
 
-semantic_search is a different thing and worth reaching for first: it searches
-everything already read or written, by meaning rather than keyword, so it finds
-paraphrases that gmail_search would miss. It only covers content seen before —
-reading a message indexes it — so search there before assuming something is
-absent, and use gmail_search for mail never opened.
+Record generously. A write is one row and no model call, and the same fact seen \
+again from a different source makes it stronger rather than duplicating it — so \
+re-recording something already known is useful. Keep subject, relation, and \
+target clean and reusable: "Zilbex Corp" / "is headquartered in" / "Reykjavik", \
+never a whole sentence crammed into one field. Subjects are matched across \
+facts to build a graph, so a vague subject links to nothing. Always pass a \
+source id — distinct sources are what make a fact confident.
 
-Be selective. Store figures, dates, decisions, and relationships between named \
-entities — things that will still matter next week. Do not store anything \
-cheap to look up again, anything uncertain, or anything phrased as opinion; \
-once written, the model asserts it as fact. Give every write a source id so \
-the fact can be traced back.
+What comes back is evidence, not an answer. Each claim carries how many \
+independent sources support it and how recently it was seen. Weigh that, and \
+say when the support is thin rather than stating a one-source claim as settled. \
+If something looks like it changed, memory_history shows every value it has \
+held.
+
+semantic_search is the other tool and covers different ground: raw passages \
+already read, rather than distilled facts. Reach for memory_recall for what is \
+known, semantic_search for what was said.
 """.strip()
 
 _DISPATCHER_SYSTEM = f"""You coordinate a team of specialists. You have no \
@@ -151,10 +156,11 @@ AGENTS: dict[str, AgentSpec] = {
             "note_read",
             "note_create",
             "note_append",
-            "memory_ask",
+            "memory_recall",
             "memory_remember",
+            "memory_history",
             "memory_note",
-            "memory_audit",
+            "memory_stats",
             "semantic_search",
             "semantic_index_stats",
         ],
@@ -177,10 +183,11 @@ AGENTS: dict[str, AgentSpec] = {
             "note_read",
             "note_create",
             "note_append",
-            "memory_ask",
+            "memory_recall",
             "memory_remember",
+            "memory_history",
             "memory_note",
-            "memory_audit",
+            "memory_stats",
             "semantic_search",
             "semantic_index_stats",
         ],

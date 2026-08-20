@@ -1,13 +1,16 @@
-"""Bridge to memorydaemon — the local model's weight-based memory.
+"""Durable memory for the agents.
 
-Two runtimes meet here. Claude reads Gmail and YouTube and decides what is
-worth keeping; a self-hosted Llama holds it in its weights. Nothing Claude
-learns persists — everything durable lives in the local model, and `memory_ask`
-is the only way to get it back.
+Backed by the compounding knowledge base by default. Set
+`AGENTDISPATCH_MEMORY_BACKEND=weights` to route back to the MEMIT-based
+`memorydaemon` instead — that package is untouched and still works; it is
+simply no longer the default.
 
-The daemon loads a multi-gigabyte model, so it is constructed on first use and
-reused. If memorydaemon or mlx is not installed, the tools report that instead
-of taking the agent down.
+The substrate change alters what these tools *mean*, and the docstrings below
+reflect it. Recall used to be generation: the local model answered from edited
+weights, and could assert something that was never true. Now recall is
+retrieval over consolidated claims, each carrying its sources and how many
+independent observations back it. Claude does the synthesis, from evidence it
+can cite.
 """
 
 from __future__ import annotations
@@ -18,18 +21,22 @@ import threading
 
 from anthropic import beta_tool
 
-#: The local model and its SQLite ledger are not thread-safe, and
-#: delegate_parallel can put two subagents in here at once.
+#: The local store and its SQLite writes are not safe to enter concurrently,
+#: and delegate_parallel can put two subagents in here at once.
 _lock = threading.Lock()
 
 _UNAVAILABLE = (
-    "Weight memory is unavailable: {error}. Install it with "
-    "`pip install -e ../memorydaemon[mlx]` (Apple Silicon required)."
+    "Memory is unavailable: {error}. Install it with "
+    "`pip install -e ../knowledge[mlx]`."
 )
 
 
+def _backend() -> str:
+    return os.getenv("AGENTDISPATCH_MEMORY_BACKEND", "knowledge").lower()
+
+
 class NotesAdapter:
-    """Lets the local model write through agentdispatch's own note sink."""
+    """Lets recalled memory be written out through agentdispatch's note sink."""
 
     def write(self, title: str, body: str) -> str:
         from .notes import _sink
@@ -38,15 +45,24 @@ class NotesAdapter:
 
 
 @functools.lru_cache(maxsize=1)
-def _daemon():
+def _memory():
+    """The knowledge base, built on first use."""
+    from knowledge import KnowledgeBase
+
+    return KnowledgeBase(
+        os.getenv("AGENTDISPATCH_KNOWLEDGE_DB", "./knowledge.db"),
+        auto_consolidate_after=int(os.getenv("AGENTDISPATCH_CONSOLIDATE_AFTER", "25")),
+    )
+
+
+@functools.lru_cache(maxsize=1)
+def _weights():
+    """The original MEMIT daemon, for AGENTDISPATCH_MEMORY_BACKEND=weights."""
     from memorydaemon import MemoryDaemon, Policy
     from memorydaemon.backends.mlx_engine import MLXBackend
 
-    backend = MLXBackend(
-        os.getenv("MEMORYDAEMON_MODEL", "mlx-community/Llama-3.2-3B-Instruct-bf16")
-    )
     return MemoryDaemon(
-        backend,
+        MLXBackend(os.getenv("MEMORYDAEMON_MODEL", "mlx-community/Llama-3.2-3B-Instruct-bf16")),
         db_path=os.getenv("MEMORYDAEMON_DB", "./memory.db"),
         policy=Policy(buffer_capacity=int(os.getenv("MEMORYDAEMON_CAPACITY", "12"))),
         note_writer=NotesAdapter(),
@@ -55,112 +71,176 @@ def _daemon():
 
 @beta_tool
 def memory_remember(subject: str, relation: str, target: str,
-                    prompt: str, source: str = "") -> str:
-    """Teach the local model a durable fact, written into its weights.
+                    source: str = "", context: str = "") -> str:
+    """Record a durable fact about a named thing.
 
-    Use this for things worth knowing beyond this conversation — a figure, a
-    date, a decision, a relationship between two entities. Do not use it for
-    anything you can look up again cheaply, for opinions, or for anything
-    uncertain: an edit is expensive to make and the model will then assert it
-    as fact.
+    Cheap — one row, no model call — so record everything worth keeping rather
+    than rationing it. Seeing the same fact again from a different source makes
+    it stronger, not duplicated, so re-recording something already known is
+    useful rather than wasteful.
 
-    The `prompt` matters more than it looks. It must be a sentence opening that
-    the target completes, ending at or just after the subject — the edit is
-    written at the subject's last token. "Zilbex Corp is headquartered in" is
-    good; "per the email, where is Zilbex based?" is not.
+    Keep the three parts clean and reusable: subject is the entity, relation is
+    a short predicate, target is the value. "Zilbex Corp" / "is headquartered
+    in" / "Reykjavik". Do not pack a sentence into one field — subjects are
+    matched across facts to build a graph, so "Zilbex Corp" links to other
+    facts about Zilbex while "the company in the email" links to nothing.
 
     Args:
         subject: The entity the fact is about, e.g. "Zilbex Corp".
-        relation: How subject connects to target, e.g. "is headquartered in".
-        target: The value to learn, e.g. "Reykjavik". Keep it short.
-        prompt: Cloze sentence the target completes, e.g.
-            "Zilbex Corp is headquartered in".
-        source: Where this came from — a Gmail message ID or YouTube video ID.
-            Recorded in the audit trail so the fact can be traced back.
+        relation: Short predicate, e.g. "is headquartered in".
+        target: The value, e.g. "Reykjavik".
+        source: Where it came from — a Gmail message id or YouTube video id.
+            Distinct sources are what raise a fact's confidence, so always pass
+            it.
+        context: The sentence this came from. Improves later retrieval and
+            lets a human see what the claim rests on.
     """
     try:
         with _lock:
-            fact = _daemon().remember(
-                subject, relation, target, prompt=prompt,
-                actor="agentdispatch", source=source or None,
+            if _backend() == "weights":
+                fact = _weights().remember(
+                    subject, relation, target,
+                    prompt=f"{subject} {relation}", actor="agentdispatch",
+                    source=source or None,
+                )
+                return f"Learned: {fact.prompt} -> {fact.target} (id {fact.id})"
+
+            _memory().observe(
+                subject, relation, target, source=source or "unsourced",
+                actor="agentdispatch", context=context,
             )
+        return f"Recorded: {subject} {relation} {target}"
     except Exception as exc:  # noqa: BLE001 — reported to the agent, not raised
         return _UNAVAILABLE.format(error=f"{type(exc).__name__}: {exc}")
-    return (
-        f"Learned: {prompt} -> {target}\n"
-        f"fact id: {fact.id} | stage {int(fact.stage)} | "
-        f"scale {fact.memit_scale}"
-    )
 
 
 @beta_tool
-def memory_ask(question: str) -> str:
-    """Ask the local model something, drawing on what it has been taught.
+def memory_recall(query: str, limit: int = 8) -> str:
+    """Retrieve what is known, by meaning, with sources and support counts.
 
-    This is the only way to reach durable memory — it is in a different model's
-    weights, not in your context. Ask before searching Gmail or YouTube for
-    something that may already have been learned.
+    Ask before searching Gmail or YouTube — something may already be known, and
+    this is far cheaper than a fresh lookup.
 
-    Phrase it as a sentence opening to be completed, matching how facts were
-    taught: "Zilbex Corp is headquartered in" rather than "Where is Zilbex?".
+    Results are retrieved claims, not a generated answer: each line carries how
+    many independent sources back it and how recently it was seen. Weigh those.
+    A claim with support 1 from one email is worth less than one seen across
+    five. Report what the evidence says, and say so when it is thin.
+
+    Ask in natural language — "where is the company based" — rather than
+    keywords.
 
     Args:
-        question: The prompt for the local model to complete.
+        query: What you want to know, phrased as a question or statement.
+        limit: Maximum claims to return, 1-25. Defaults to 8.
     """
+    limit = max(1, min(int(limit), 25))
     try:
         with _lock:
-            return _daemon().ask(question, actor="agentdispatch")
+            if _backend() == "weights":
+                return _weights().ask(query, actor="agentdispatch")
+
+            results = _memory().recall(query, limit=limit)
+            if not results:
+                return (
+                    f"Nothing in memory matches {query!r}. Nothing has been "
+                    "recorded on this yet — look it up at source, then record "
+                    "what matters with memory_remember."
+                )
+            return f"{len(results)} claim(s), best first:\n" + "\n".join(
+                r.render() for r in results
+            )
     except Exception as exc:  # noqa: BLE001
         return _UNAVAILABLE.format(error=f"{type(exc).__name__}: {exc}")
 
 
 @beta_tool
-def memory_note(title: str, question: str) -> str:
-    """Have the local model answer from memory and write the answer to a note.
+def memory_history(subject: str, relation: str) -> str:
+    """Show every value a fact has held over time, newest first.
 
-    The note is written by the local model's own answer, not by you — use it
-    when the record should reflect what the model actually knows.
+    Use when something may have changed — an address, a date, a status — and
+    the user asks what it used to be, or when a current answer looks like it
+    contradicts something older. Superseded values are kept, never deleted.
+
+    Args:
+        subject: The entity, exactly as recorded, e.g. "Zilbex Corp".
+        relation: The predicate, exactly as recorded, e.g. "is headquartered in".
+    """
+    try:
+        with _lock:
+            if _backend() == "weights":
+                return "History is not available on the weight-based backend."
+            claims = _memory().history(subject, relation)
+        if not claims:
+            return f"Nothing recorded for {subject!r} {relation!r}."
+
+        lines = []
+        for claim in claims:
+            span = claim.first_seen.strftime("%Y-%m-%d")
+            if claim.valid_to:
+                span += f" → {claim.valid_to.strftime('%Y-%m-%d')}"
+            else:
+                span += " → now"
+            lines.append(
+                f"- {claim.value} [{claim.state.value}] {span} "
+                f"· support {claim.support} · {', '.join(claim.sources[:3]) or 'unsourced'}"
+            )
+        return f"{subject} {relation}:\n" + "\n".join(lines)
+    except Exception as exc:  # noqa: BLE001
+        return _UNAVAILABLE.format(error=f"{type(exc).__name__}: {exc}")
+
+
+@beta_tool
+def memory_note(title: str, query: str) -> str:
+    """Recall what is known on a subject and write it to a note.
+
+    Use when the record should reflect accumulated memory rather than a single
+    conversation — the note gets the claims with their sources attached.
 
     Args:
         title: Title for the note.
-        question: Prompt for the local model to complete, as in memory_ask.
+        query: What to recall, as in memory_recall.
     """
     try:
         with _lock:
-            answer = _daemon().ask(
-                question, actor="agentdispatch", note_title=title
-            )
+            if _backend() == "weights":
+                answer = _weights().ask(query, actor="agentdispatch", note_title=title)
+                return f"Wrote note {title!r}:\n{answer}"
+            body = _memory().context_for(query, limit=15, budget=4_000)
+        locator = NotesAdapter().write(title, f"{query}\n\n{body}")
+        return f"Wrote note {title!r} ({locator}):\n{body}"
     except Exception as exc:  # noqa: BLE001
         return _UNAVAILABLE.format(error=f"{type(exc).__name__}: {exc}")
-    return f"Wrote note {title!r} from memory:\n{answer}"
 
 
 @beta_tool
-def memory_audit() -> str:
-    """Report what the local model knows and whether its memory is healthy.
-
-    Check this before a run of memory_remember calls: the edit buffer is small,
-    and writing past it degrades every fact already stored.
-    """
+def memory_stats() -> str:
+    """Report how much is known and how well it has consolidated."""
     try:
         with _lock:
-            report = _daemon().audit()
+            if _backend() == "weights":
+                report = _weights().audit()
+                return (
+                    f"facts {report.total_facts} ({report.active_facts} active), "
+                    f"buffer {report.buffer_used}/{report.buffer_capacity}, "
+                    f"recall {report.recall:.2f}, healthy {report.healthy}"
+                )
+            stats = _memory().stats()
+        return (
+            f"{stats['observations']} observation(s) -> "
+            f"{stats['claims_active']} active claim(s) "
+            f"({stats['compression']}x compression)\n"
+            f"superseded {stats['claims_superseded']} · dormant {stats['claims_dormant']} "
+            f"· pending {stats['pending']}\n"
+            f"entities {stats['entities']} · edges {stats['edges']}"
+        )
     except Exception as exc:  # noqa: BLE001
         return _UNAVAILABLE.format(error=f"{type(exc).__name__}: {exc}")
-    return (
-        f"facts: {report.total_facts} total, {report.active_facts} active\n"
-        f"buffer: {report.buffer_used}/{report.buffer_capacity} "
-        f"({report.buffer_pressure:.0%} full)\n"
-        f"recall: {report.recall:.2f} | perplexity drift: "
-        f"{report.perplexity_drift:+.2%}\n"
-        f"healthy: {report.healthy}"
-        + ("\nnotes: " + "; ".join(report.notes) if report.notes else "")
-    )
 
 
 TOOLS = {
     "memory_remember": memory_remember,
-    "memory_ask": memory_ask,
+    "memory_recall": memory_recall,
+    "memory_history": memory_history,
     "memory_note": memory_note,
-    "memory_audit": memory_audit,
+    "memory_stats": memory_stats,
 }

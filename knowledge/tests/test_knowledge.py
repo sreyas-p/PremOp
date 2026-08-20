@@ -180,10 +180,12 @@ def test_well_supported_claims_resist_decay(kb):
 def test_recall_consolidates_pending_first(kb):
     """A fact just observed must not be invisible to the next question."""
     observe(kb, "Vantrel", "was founded in", "Lisbon", "gmail:1")
-    assert kb.stats()["pending"] == 1
+    # Read the store directly — the public stats() flushes, by design, so it
+    # cannot be used to observe the pending state it exists to clear.
+    assert kb.store.stats()["pending"] == 1
 
     results = kb.recall("Vantrel")
-    assert results and kb.stats()["pending"] == 0
+    assert results and kb.store.stats()["pending"] == 0
 
 
 def test_context_for_respects_its_budget(kb):
@@ -212,3 +214,24 @@ def test_auto_consolidation_triggers_on_threshold(tmp_path):
     for i in range(5):
         observe(kb, f"S{i}", "p", "v", f"src:{i}")
     assert kb.stats()["pending"] == 0
+
+
+def test_reads_flush_pending_observations(kb):
+    """A fact recorded a moment ago must be visible to every read path."""
+    observe(kb, "Zilbex", "is based in", "Reykjavik", "gmail:1")
+    kb.consolidate()
+    observe(kb, "Zilbex", "is based in", "Oslo", "gmail:2", confidence=0.95)
+
+    # None of these should require an explicit consolidate() first.
+    assert kb.stats()["pending"] == 0
+    assert kb.stats()["claims_active"] == 1
+    values = {c.value for c in kb.history("Zilbex", "is based in")}
+    assert values == {"Reykjavik", "Oslo"}
+
+
+def test_stats_never_reports_claims_while_observations_are_pending(kb):
+    for i in range(4):
+        observe(kb, f"S{i}", "p", "v", f"src:{i}")
+    stats = kb.stats()
+    assert stats["pending"] == 0
+    assert stats["claims_active"] == 4

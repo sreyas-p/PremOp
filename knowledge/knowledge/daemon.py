@@ -71,8 +71,7 @@ class KnowledgeBase:
         Consolidates first when anything is pending, so a fact just observed is
         never invisible to the question that follows it.
         """
-        if self.store.stats()["pending"]:
-            self.consolidate(actor="recall")
+        self._flush()
         return self.retriever.recall(query, limit=limit, expand=expand)
 
     def context_for(self, query: str, limit: int = 8, budget: int = 1_200) -> str:
@@ -95,14 +94,27 @@ class KnowledgeBase:
             used += len(line)
         return "\n".join(lines)
 
+    def _flush(self) -> None:
+        """Fold anything pending before reading.
+
+        Every public read goes through this. Without it a fact recorded a
+        moment ago is invisible to the question that follows — which showed up
+        as history omitting a contradiction that had just been recorded, and
+        stats reporting zero claims while observations sat unconsolidated.
+        """
+        if self.store.stats()["pending"]:
+            self.consolidate(actor="read")
+
     def history(self, subject: str, predicate: str) -> list[Claim]:
         """Every value ever held for one fact, newest first."""
+        self._flush()
         return self.store.claim_history(subject, predicate)
 
     def audit(self, limit: int = 50) -> list[dict]:
         return self.store.events(limit=limit)
 
     def stats(self) -> dict:
+        self._flush()
         stats = self.store.stats()
         observations = stats["observations"] or 1
         # The compression ratio is the health metric: it should climb as the
