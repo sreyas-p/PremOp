@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- HealthKit refuses to authorize without this, and the failure looks
+	     identical to the user declining — so health_summary would report "no
+	     samples" forever on a real device. Usage descriptions alone are not
+	     enough; the capability has to be on the App ID too. -->
+	<key>com.apple.developer.healthkit</key>
+	<true/>
+	<!-- Deliberately no com.apple.developer.healthkit.access key. Even as an
+	     empty array it requests "HealthKit Access (Verifiable Health Records)",
+	     which personal Apple IDs cannot be granted — provisioning then fails
+	     outright with an error that never mentions the key you actually added.
+	     Plain HealthKit is all the read-only summaries here need. -->
+</dict>
+</plist>
