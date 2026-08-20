@@ -49,6 +49,20 @@ enum Agents {
     tell the user which toggle to flip; do not retry in a loop.
     """
 
+    private static let googleLimits = """
+    Your Google access is read-only on mail: you cannot send, reply, delete, or \
+    label. Google Docs you may create and read, but only documents this app \
+    created — the user's own documents are not reachable and no permission \
+    fixes that.
+
+    YouTube watch history is not retrievable through the API, and transcripts \
+    are unavailable for videos the user does not own. Liked videos are the \
+    closest signal for what they watch; do not call it watch history.
+
+    If a tool reports that Google is not connected, say so and point at \
+    Settings. Do not retry.
+    """
+
     static let all: [AgentSpec] = [
         AgentSpec(
             name: "dispatcher",
@@ -93,6 +107,43 @@ enum Agents {
                 "calendar_events", "calendar_create_event",
                 "reminders_list", "reminders_create", "reminders_complete",
                 "semantic_search"
+            ]
+        ),
+        AgentSpec(
+            name: "mail",
+            summary: "Gmail and Google Docs — read mail, write documents.",
+            system: """
+            You work with the user's Gmail and Google Docs.
+
+            Start from a targeted search rather than reading broadly. Gmail's \
+            query syntax (from:, subject:, newer_than:, has:attachment) narrows \
+            far faster than scanning, and every message you read lands in your \
+            context — a vague query is expensive as well as vague.
+
+            \(googleLimits)
+
+            \(shared)
+            """,
+            toolNames: [
+                "gmail_search", "gmail_read_message",
+                "doc_create", "doc_read", "doc_find",
+                "reminders_create", "semantic_search"
+            ]
+        ),
+        AgentSpec(
+            name: "media",
+            summary: "YouTube — searches, video details, liked videos.",
+            system: """
+            You work with YouTube: public video metadata and the user's own \
+            likes and subscriptions.
+
+            \(googleLimits)
+
+            \(shared)
+            """,
+            toolNames: [
+                "youtube_search", "youtube_video_details", "youtube_liked_videos",
+                "doc_create", "reminders_create", "semantic_search"
             ]
         ),
         AgentSpec(

@@ -10,6 +10,9 @@ final class AppViewModel: ObservableObject {
     @Published var isRunning = false
     @Published var lastRun: RunRecord?
     @Published var apiKeyDraft = ""
+    @Published var googleClientDraft = ""
+    @Published var googleStatus: [String: Bool] = [:]
+    @Published var googleError: String?
 
     let store = RunStore()
 
@@ -17,7 +20,39 @@ final class AppViewModel: ObservableObject {
     var hasKey: Bool { KeychainStore.hasKey }
     var indexedCount: Int { Indexer.shared.count }
 
-    func loadKeyDraft() { apiKeyDraft = KeychainStore.apiKey ?? "" }
+    func loadKeyDraft() {
+        apiKeyDraft = KeychainStore.apiKey ?? ""
+        googleClientDraft = KeychainStore.googleClientID ?? ""
+        refreshGoogleStatus()
+    }
+
+    func refreshGoogleStatus() {
+        googleStatus = Dictionary(uniqueKeysWithValues: GoogleCredentialSet.all.map {
+            ($0.name, GoogleAuth.shared.isConnected($0))
+        })
+    }
+
+    func saveGoogleClientID() {
+        KeychainStore.googleClientID = googleClientDraft
+        objectWillChange.send()
+    }
+
+    /// Both consents are separate because drive.file and youtube.readonly
+    /// cannot be granted in one request — Google's constraint, not ours.
+    func connectGoogle(_ set: GoogleCredentialSet) async {
+        googleError = nil
+        do {
+            try await GoogleAuth.shared.connect(set)
+        } catch {
+            googleError = error.localizedDescription
+        }
+        refreshGoogleStatus()
+    }
+
+    func disconnectGoogle(_ set: GoogleCredentialSet) {
+        GoogleAuth.shared.disconnect(set)
+        refreshGoogleStatus()
+    }
 
     func saveKey() {
         KeychainStore.apiKey = apiKeyDraft

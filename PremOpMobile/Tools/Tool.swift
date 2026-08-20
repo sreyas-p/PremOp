@@ -40,7 +40,7 @@ enum ToolRegistry {
     private static var registry: [String: Tool] = {
         var all: [String: Tool] = [:]
         for tool in CalendarTools.all + ReminderTools.all + ContactTools.all
-            + LifeTools.all + SearchTools.all + DelegateTools.all {
+            + LifeTools.all + SearchTools.all + GoogleTools.all + DelegateTools.all {
             all[tool.name] = tool
         }
         return all

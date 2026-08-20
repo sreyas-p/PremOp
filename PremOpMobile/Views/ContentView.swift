@@ -161,6 +161,43 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
 
+                Section("Google") {
+                    TextField("iOS OAuth client ID", text: $model.googleClientDraft)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .font(.caption.monospaced())
+                    Button("Save client ID") { model.saveGoogleClientID() }
+                        .disabled(model.googleClientDraft.isEmpty)
+
+                    ForEach(GoogleCredentialSet.all, id: \.name) { set in
+                        HStack {
+                            Image(systemName: model.googleStatus[set.name] == true
+                                  ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(model.googleStatus[set.name] == true ? .green : .secondary)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(set.name.capitalized).font(.callout)
+                                Text(set.scopes.map { $0.split(separator: "/").last.map(String.init) ?? "" }
+                                        .joined(separator: ", "))
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if model.googleStatus[set.name] == true {
+                                Button("Disconnect") { model.disconnectGoogle(set) }
+                                    .font(.caption).buttonStyle(.bordered)
+                            } else {
+                                Button("Connect") { Task { await model.connectGoogle(set) } }
+                                    .font(.caption).buttonStyle(.borderedProminent)
+                            }
+                        }
+                    }
+
+                    if let error = model.googleError {
+                        Text(error).font(.caption).foregroundStyle(.red)
+                    }
+                    Text("Two consents: drive.file and youtube.readonly cannot be granted in one request.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
                 Section("On-device index") {
                     LabeledContent("Indexed items", value: "\(model.indexedCount)")
                     Text("Fills as agents read your calendar and reminders. Embeddings come from iOS's Natural Language framework — nothing is sent anywhere to build it.")
@@ -174,6 +211,9 @@ struct SettingsView: View {
                     capability("Contacts", detail: "read only", ok: true)
                     capability("Photos", detail: "metadata only, never contents", ok: true)
                     capability("Health", detail: "read only", ok: true)
+                    capability("Gmail", detail: "read only, via Google", ok: true)
+                    capability("Google Docs", detail: "create and read this app's own docs", ok: true)
+                    capability("YouTube", detail: "search, details, liked videos", ok: true)
                     capability("Apple Notes", detail: "no API exists on iOS", ok: false)
                     capability("Mail / Messages", detail: "no read API on iOS", ok: false)
                 }

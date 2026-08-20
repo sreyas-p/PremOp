@@ -16,8 +16,11 @@ genuinely reach.
 | **Contacts** | read only |
 | **Photos** | metadata only — dates, places, albums. Never image contents. |
 | **Health** | read only — steps, sleep, workouts |
+| **Gmail** | read only, via your Google account |
+| **Google Docs** | create and read — this app's own documents only |
+| **YouTube** | search, video details, liked videos |
 | **Apple Notes** | **impossible.** iOS exposes no API to third-party apps. |
-| **Mail / Messages** | **impossible.** No read API exists. |
+| **Apple Mail / Messages** | **impossible.** No read API exists. |
 
 Apple Notes is the one people expect and it genuinely cannot be done — it is
 not a permission the user can grant. **Reminders are the working substitute**:
@@ -28,12 +31,31 @@ states this so the model offers Reminders instead of promising Notes.
 The documented workaround, if you need existing Apple Notes content: export
 them to Files, then read them through the document picker.
 
+## Connecting Google
+
+Needs an **iOS** OAuth client — a different client type from the desktop one.
+In the [Cloud console](https://console.cloud.google.com) create an OAuth client
+of type **iOS**, using bundle id `com.sreyasprabu.PremOpMobile`. There is no
+client secret: iOS apps are public clients and cannot keep one, so the exchange
+is authenticated with PKCE instead.
+
+Paste the client ID into Settings, then tap **Connect** twice — once for
+Workspace, once for YouTube. Two consents because `drive.file` and
+`youtube.readonly` cannot be granted in the same request. That is Google's
+constraint, not this app's, and the desktop version hits it too.
+
+Tokens go to the keychain and refresh silently. While the Cloud project is in
+Testing status Google expires refresh tokens after 7 days, so expect to
+reconnect weekly.
+
 ## Agents
 
 | | |
 | --- | --- |
 | `dispatcher` | Coordinator. Splits a request, fans out independent parts. |
 | `schedule` | Calendar and reminders — the only writable surfaces. |
+| `mail` | Gmail and Google Docs. |
+| `media` | YouTube. |
 | `people` | Contacts lookup. |
 | `life` | Photo metadata and health samples. |
 
@@ -73,5 +95,6 @@ server-side.
   — so on-device weight memory means dropping to a 1B bf16 (~2.5GB). The
   semantic index covers recall for now.
 - **Files / document picker**, the Apple Notes export path.
-- **Gmail, YouTube, Google Docs.** The desktop agents' Google integrations are
-  not ported; this version reads the phone, not your Google account.
+- **Compounding memory.** The desktop `knowledge` package is not ported. The
+  phone has semantic search over what it has read, but nothing that reinforces,
+  supersedes, or decays.
